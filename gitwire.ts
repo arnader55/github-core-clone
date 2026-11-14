@@ -412,6 +412,19 @@ export function readPack(pack, resolveBase) {
 // exactly `size` bytes, so the predicate is monotonic in the end position.
 function inflateAt(pack, pos, size) {
   const limit = pack.length - 20; // never read into the trailer
+  // Fast path: one inflate with info:true reports how many input bytes the
+  // stream consumed, which is exactly the stream end. (Node 18+; older
+  // versions ignore the option and return a plain Buffer, which falls
+  // through to the binary search below.)
+  try {
+    const result = inflateSync(pack.subarray(pos, limit), { info: true });
+    if (result && result.buffer && result.engine && typeof result.engine.bytesWritten === 'number') {
+      const data = result.buffer;
+      if (data.length === size) return { data, next: pos + result.engine.bytesWritten };
+    }
+  } catch {
+    // Fall through to the binary search.
+  }
   const tryEnd = (end) => {
     try {
       const out = inflateSync(pack.subarray(pos, end));
