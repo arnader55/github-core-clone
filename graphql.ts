@@ -233,7 +233,8 @@ class Parser {
     while (!this.eat(')')) {
       const name = this.expect('NAME').value;
       this.expect(':');
-      args[name] = this.parseValue(true);
+      // Arguments are not constant: they may reference variables ($var).
+      args[name] = this.parseValue(false);
     }
     return args;
   }

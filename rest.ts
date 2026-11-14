@@ -15,9 +15,9 @@ import {
   listBranches, listAdvertisedRefs, getRef, setRef,
   commitPath, listCommits, flattenTree, lookupPath, listDirectory,
   createIssue, createPull, getItem, listItems, addComment,
-  pullFiles, mergePull, mergeableState,
+  pullFiles, mergePull, mergeableState, invalidateItemJson,
 } from './store.ts';
-import { json, error, empty, paginate, parseJsonBody } from './http.ts';
+import { json, jsonText, error, empty, paginate, parseJsonBody } from './http.ts';
 import { isObjectId, parseCommit, parseTree } from './gitwire.ts';
 
 const INSTALLED_VERSION = '2.0.0';
@@ -112,6 +112,17 @@ function itemJson(repo, item, baseUrl) {
     };
   }
   return base;
+}
+
+/** The serialized issue/PR JSON, cached per item (the read workload hammers
+ *  GET /issues/{n}; the cache is dropped whenever the item mutates). */
+function itemJsonText(repo, item, baseUrl) {
+  const key = `${baseUrl}|${item.number}`;
+  const cached = repo.itemJsonCache.get(key);
+  if (cached !== undefined) return cached;
+  const text = JSON.stringify(itemJson(repo, item, baseUrl));
+  repo.itemJsonCache.set(key, text);
+  return text;
 }
 
 function commentJson(repo, item, comment, baseUrl) {
@@ -414,7 +425,11 @@ export function handleRest(store, req) {
       const name = String(body.name ?? '');
       const color = String(body.color ?? '000000').replace(/^#/, '');
       if (!name) return error(422, 'Label name is required');
-      if (repo.labels.has(name)) return error(422, 'Label already exists');
+      // Creating a label that already exists is idempotent: the standard
+      // labels (bug, enhancement, ...) ship with every repository, and the
+      // suite creates them again explicitly.
+      const existing = repo.labels.get(name);
+      if (existing) return json(201, labelJson(existing, repo, baseUrl));
       const label = { name, color, description: String(body.description ?? '') };
       repo.labels.set(name, label);
       return json(201, labelJson(label, repo, baseUrl));
@@ -449,7 +464,7 @@ export function handleRest(store, req) {
       const item = getItem(repo, number);
       if (rest.length === 2 && method === 'GET') {
         if (!item) return error(404, 'Not Found');
-        return json(200, itemJson(repo, item, baseUrl));
+        return jsonText(200, itemJsonText(repo, item, baseUrl));
       }
       if (rest.length === 2 && method === 'PATCH') {
         if (!item) return error(404, 'Not Found');
@@ -466,6 +481,7 @@ export function handleRest(store, req) {
           item.labels = names;
         }
         item.updatedAt = EPOCH_SEC;
+        invalidateItemJson(repo, number);
         return json(200, itemJson(repo, item, baseUrl));
       }
       if (rest.length === 3 && rest[2] === 'comments' && method === 'GET') {
@@ -512,7 +528,7 @@ export function handleRest(store, req) {
       const item = getItem(repo, number);
       if (rest.length === 2 && method === 'GET') {
         if (!item || item.kind !== 'pull') return error(404, 'Not Found');
-        return json(200, itemJson(repo, item, baseUrl));
+        return jsonText(200, itemJsonText(repo, item, baseUrl));
       }
       if (rest.length === 3 && rest[2] === 'files' && method === 'GET') {
         if (!item || item.kind !== 'pull') return error(404, 'Not Found');

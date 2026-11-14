@@ -104,7 +104,10 @@ export function parseCommit(data) {
   const text = data.toString('utf8');
   const headEnd = text.indexOf('\n\n');
   const head = headEnd === -1 ? text : text.slice(0, headEnd);
-  const message = headEnd === -1 ? '' : text.slice(headEnd + 2);
+  let message = headEnd === -1 ? '' : text.slice(headEnd + 2);
+  // GitHub's API returns the message without the trailing newline the object
+  // itself carries.
+  if (message.endsWith('\n')) message = message.slice(0, -1);
   let tree = '';
   const parents = [];
   let author = '';
@@ -141,7 +144,8 @@ export function parseTag(data) {
   const text = data.toString('utf8');
   const headEnd = text.indexOf('\n\n');
   const head = headEnd === -1 ? text : text.slice(0, headEnd);
-  const message = headEnd === -1 ? '' : text.slice(headEnd + 2);
+  let message = headEnd === -1 ? '' : text.slice(headEnd + 2);
+  if (message.endsWith('\n')) message = message.slice(0, -1);
   let object = '';
   let type = '';
   let tag = '';

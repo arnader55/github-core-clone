@@ -19,6 +19,16 @@ export function json(status, body, extraHeaders = {}) {
   return { status, headers, body: Buffer.from(JSON.stringify(body), 'utf8') };
 }
 
+/** A JSON response from an already-serialized body (fresh request id each time). */
+export function jsonText(status, text, extraHeaders = {}) {
+  const headers = {
+    'content-type': 'application/json',
+    'x-github-request-id': requestId(),
+    ...extraHeaders,
+  };
+  return { status, headers, body: Buffer.from(text, 'utf8') };
+}
+
 /** A JSON error response: {"message": string}. */
 export function error(status, message, extraHeaders = {}) {
   return json(status, { message }, extraHeaders);

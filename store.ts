@@ -105,6 +105,7 @@ export function createRepo(store, { name, isPrivate = false, description = '', d
     nextNumber: 1,
     comments: new Map(), // issue number -> [{id, body, createdAt}]
     treeCache: new Map(), // tree oid -> Map<path, {mode, oid}>
+    itemJsonCache: new Map(), // `${baseUrl}|${number}` -> serialized issue/PR JSON
   };
   store.repos.set(repoKey(VIEWER.login, name), repo);
   return { repo };
@@ -499,6 +500,7 @@ export function createPull(store, repo, { title, body = '', head, base }) {
     mergeCommitSha: null,
     head: { ref: head, sha: peel(repo, headOid) },
     base: { ref: base, sha: peel(repo, baseOid) },
+    comments: [],
   };
   repo.items.set(number, item);
   return { item };
@@ -521,6 +523,13 @@ export function listItems(repo, { state = 'open', sort = 'created', direction = 
   return items;
 }
 
+/** Drop the cached serialized JSON for one item (call after any mutation). */
+export function invalidateItemJson(repo, number) {
+  for (const key of repo.itemJsonCache.keys()) {
+    if (key.endsWith(`|${number}`)) repo.itemJsonCache.delete(key);
+  }
+}
+
 export function addComment(store, repo, number, body) {
   const item = repo.items.get(number);
   if (!item) return null;
@@ -528,6 +537,7 @@ export function addComment(store, repo, number, body) {
   store.nextCommentId += 1;
   const comment = { id, body: String(body ?? ''), createdAt: EPOCH_SEC };
   item.comments.push(comment);
+  invalidateItemJson(repo, number);
   return comment;
 }
 
@@ -737,5 +747,6 @@ export function mergePull(repo, pull, method = 'squash') {
   pull.mergeCommitSha = commitOid;
   pull.closedAt = EPOCH_SEC;
   pull.updatedAt = EPOCH_SEC;
+  invalidateItemJson(repo, pull.number);
   return { merged: true, sha: commitOid, message };
 }
